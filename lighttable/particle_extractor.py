@@ -27,6 +27,9 @@ class Particle_Extractor:
         #defining the config file
         self.c = c
 
+        #saving run name
+        self.run_name = c["config"]["run_name"]
+
         #writing the path to the sqlite database
         self.db_file = Path(
             c["output"]["path"],
@@ -51,7 +54,7 @@ class Particle_Extractor:
     def extract_data(self, db_file, algorithm):
         
         #logging that processing started
-        logger.info(f"Extract data for algorithm: {algorithm}")
+        logger.info(f"{self.run_name} - Extract data for algorithm: {algorithm}")
 
         #connecting to the database
         db = sqlite3.connect(db_file)
@@ -71,7 +74,7 @@ class Particle_Extractor:
         trajectories = cur.fetchall()
 
         #logging number of particles found
-        logger.info(f"Data extract for {algorithm} complete. {len(trajectories)} particles found.")
+        logger.info(f"{self.run_name} - Data extract for {algorithm} complete. {len(trajectories)} particles found.")
 
         #empty list to save dictionary of values and labels
         data_list=[]
@@ -94,7 +97,7 @@ class Particle_Extractor:
     def calc_grain_size(self, linked_particles, algorithm):
         
         #logging that processing started
-        logger.info(f"Calculating grain size for algorithm: {algorithm}")
+        logger.info(f"{self.run_name} - Calculating grain size for algorithm: {algorithm}")
 
         #calculating the equivalent grain size assuming the particle was circular
         linked_particles['grain_size'] = 2*(np.sqrt(linked_particles['area']/np.pi))
@@ -106,14 +109,14 @@ class Particle_Extractor:
         linked_particles['mass'] = linked_particles['volume'] * self.sediment_density
 
         #logging that grain size calculation is finished
-        logger.info("Grain size calculation complete.")
+        logger.info(f"{self.run_name} - Grain size calculation complete.")
 
         return linked_particles
 
     def calc_gsd(self, linked_particles, algorithm):
         
         #logging that gsd calculation has started
-        logger.info(f"Calculating the grain size distribution for algorithm: {algorithm}")
+        logger.info(f"{self.run_name} - Calculating the grain size distribution for algorithm: {algorithm}")
 
         #create list of values to bin data by
         gsd_bins = [0, 0.5, 0.71, 1, 1.4, 2, 2.83, 4, 5.6, 8, 11.3, 16, 22.6, 32.3, 45, 100]
@@ -143,14 +146,14 @@ class Particle_Extractor:
             prev_ind = ind
 
         #logging that gsd calculation is complete
-        logger.info("Grain size distribution calculation complete.")
+        logger.info(f"{self.run_name} - Grain size distribution calculation complete.")
 
         return gsd
     
     def calc_Di(self, gsd, algorithm):
          
         #logging that the grain size Di calcualtions have started
-        logger.info(f"Starting to calculate the grain size Di for algorithm: {algorithm}")
+        logger.info(f"{self.run_name} - Starting to calculate the grain size Di for algorithm: {algorithm}")
 
         #creating array to store percentage values
         percentages = np.zeros(len(gsd))
@@ -177,7 +180,7 @@ class Particle_Extractor:
                         (percentages[kk + 1] - percentages[kk]) * (self.Di_percentile[m] - percentages[kk]))
 
         #logging that the grain size Di calcualtions have started
-        logger.info("Grain Size Di calculation complete")
+        logger.info(f"{self.run_name} - Grain Size Di calculation complete")
 
         print(Di)
 
@@ -186,7 +189,7 @@ class Particle_Extractor:
     def transport_rate(self, linked_particles, algorithm):
 
         #logging that sediment transport rate calculations have started
-        logger.info(f"Starting to calculate the sediment transport rate for algorithm: {algorithm}")
+        logger.info(f"{self.run_name} - Starting to calculate the sediment transport rate for algorithm: {algorithm}")
 
         #defining the first and last frames
         first_frame = int(np.floor(linked_particles['first_frame'].min()))
@@ -214,7 +217,7 @@ class Particle_Extractor:
         for index, array in enumerate(np.split(second_transport, min_index)):
             minute_transport[index] = np.mean(array)
 
-        logger.info("Sediment transport rate calculations complete")
+        logger.info(f"{self.run_name} - Sediment transport rate calculations complete")
 
         return second_transport, minute_transport, transport_bins[:-1] - first_frame + 1, np.append(min_index, last_frame - first_frame) + 1
     

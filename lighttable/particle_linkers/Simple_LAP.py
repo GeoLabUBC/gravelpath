@@ -32,6 +32,9 @@ class SimpleLAP:
         #defining the config file
         self.c = c
 
+        #saving run name
+        self.run_name = c["config"]["run_name"]
+
         #writing the path to the sqlite database
         self.db_file = Path(
             c["output"]["path"],
@@ -84,7 +87,7 @@ class SimpleLAP:
         return particle_properties
     
 
-    def linking_particles(self, recent_df, particle_properties, image_frame):
+    def linking_particles(self, recent_df, all_particles_df, particle_properties, image_frame):
 
         #finding number of new and old partilces
         new_particle_count = len(particle_properties)
@@ -205,8 +208,8 @@ class SimpleLAP:
             #obtaining positions where particles have reached the max count
             count_index = recent_df.index[count_test]
 
-            #takes the particles that are no longer tracked and inserts their paths to the trajectories database 
-            self.track_particles(self.db_file, recent_df.iloc[count_index])
+            #appending the recent particles to the dataframe of all particles
+            all_particles_df = pd.concat([all_particles_df, recent_df.iloc[count_index]], ignore_index=True)
 
             #droppping the particles from the recent df
             recent_df = recent_df.drop(count_index, axis = 0)
@@ -214,7 +217,7 @@ class SimpleLAP:
             #reseting the index of the recent df
             recent_df = recent_df.reset_index(drop=True)
 
-        return recent_df, cost_matrix
+        return recent_df, all_particles_df
     
     def track_particles(self, db_file, to_track):
         
@@ -263,6 +266,17 @@ class SimpleLAP:
                        'y_final', 
                        'count'])
         
+        #create a pandas dataframe to store all particles to reduce number of times sqlite databse is called
+        all_particles_df = pd.DataFrame(columns = ['UID',
+                                            'first_frame',
+                                            'x_init', 
+                                            'y_init', 
+                                            'area',
+                                            'last_frame', 
+                                            'x_recent', 
+                                            'y_recent', 
+                                            'count'])
+
         #start timer
         tic = time.perf_counter()
 
@@ -306,7 +320,7 @@ class SimpleLAP:
                 print(f"{current_frame} was empty")
             
             else: 
-                recent_df, cost_matrix = self.linking_particles(recent_df, particle_properties, img_time)
+                recent_df, all_particles_df = self.linking_particles(recent_df, all_particles_df, particle_properties, img_time)
             current_frame += 1 
             frame_count += 1
 
@@ -315,7 +329,7 @@ class SimpleLAP:
                 toc = time.perf_counter()
                 fps = frame_count / (toc - tic)
                 logger.info(
-                    f"{img_time}, fps: {fps:.2f}, total frames: {current_frame}/{frame_count_total}, time left: {((frame_count_total - current_frame) / fps) / 60:.2f} min"
+                    f"{self.run_name}, {img_time}, fps: {fps:.2f}, total frames: {current_frame}/{frame_count_total}, time left: {((frame_count_total - current_frame) / fps) / 60:.2f} min"
                 )
                 tic = time.perf_counter()
                 frame_count = 0
@@ -376,5 +390,5 @@ class SimpleLAP:
             time_before = img_time
             prev_df = recent_df
 
-        #tracking any particles left in the dataframe after finished looking through all the images
-        self.track_particles(self.db_file, recent_df)
+        #writing the information from all the particles to the sqlite database
+        self.track_particles(self.db_file, all_particles_df)

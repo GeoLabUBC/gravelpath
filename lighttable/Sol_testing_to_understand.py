@@ -7,6 +7,42 @@ import skimage
 import pandas as pd
 import uuid
 from scipy.optimize import linear_sum_assignment as lsa 
+import tkinter as tk
+
+root = tk.Tk()
+
+root.withdraw()
+
+def on_button_click():
+    # Close the pop-up when the button is clicked
+    root.quit()  # Quit the event loop
+    root.destroy()  # Destroy the root window
+
+# Create a pop-up window
+def show_popup():
+    # Create a new top-level window (pop-up)
+    popup = tk.Toplevel(root)
+    popup.title("Existing SQlite Database Detected")
+
+    # Add a label
+    label = tk.Label(popup, text="If you proceed the existing SQlite Database will be overwritten. Click the button to continue.")
+    label.pack(pady=10)
+
+    # Add a button that must be clicked to continue
+    button = tk.Button(popup, text="Erase Existing SQlite Database", command=on_button_click)
+    button.pack(pady=10)
+
+    # Center the popup window on the screen
+    popup.geometry("300x100+500+300")
+
+    # Make the pop-up modal (prevent interaction with other windows)
+    popup.grab_set()
+
+# Call the popup function
+show_popup()
+
+# Start the main loop and wait until the button is clicked
+root.mainloop()
 
 image_path = "/Users/sol/Desktop/Kevin_Experiment/short_boat_stack/vid-120fps-07-05-22.1_Cam_11363_Cine1000000.tif"
 image_path_2 = "/Users/sol/Desktop/Kevin_Experiment/short_boat_stack/vid-120fps-07-05-22.1_Cam_11363_Cine1000001.tif"
@@ -29,6 +65,20 @@ img1 = sharpen_image(img)
 img3 = sharpen_image(img2)
 # cv2.imshow('sharpened image', img1)
 # cv2.waitKey(0)
+
+db = sqlite3.connect("/Users/sol/Documents/GitHub/output/lighttable_test_output.sqlite")
+
+def table_exists(db, table_name):
+            cursor = db.cursor()
+            cursor.execute("""
+                SELECT name FROM sqlite_master WHERE type='table' AND name=?;
+                 """, (table_name,))
+            return cursor.fetchone() is not None
+
+table_exists(db, "images")
+
+db.commit()
+db.close()
 
 def db_create(db_path):
     db = sqlite3.connect(db_path)

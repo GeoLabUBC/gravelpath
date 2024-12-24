@@ -5,7 +5,6 @@
 import numpy as np
 import pandas as pd
 import uuid
-from scipy.optimize import linear_sum_assignment as lsa
 
 # image importing
 from pathlib import Path
@@ -28,6 +27,9 @@ class NoFilter:
         
         #defining the config file
         self.c = c
+
+        #saving run name
+        self.run_name = c["config"]["run_name"]
 
         #writing the path to the sqlite database
         self.db_file = Path(
@@ -119,6 +121,17 @@ class NoFilter:
                                             'y_recent', 
                                             'count'])
         
+        #create a pandas dataframe to store all particles to reduce number of times sqlite databse is called
+        all_particles_df = pd.DataFrame(columns = ['UID',
+                                            'first_frame',
+                                            'x_init', 
+                                            'y_init', 
+                                            'area',
+                                            'last_frame', 
+                                            'x_recent', 
+                                            'y_recent', 
+                                            'count'])
+
         #start timer
         tic = time.perf_counter()
 
@@ -147,8 +160,9 @@ class NoFilter:
                                      int(particle_properties[pp][0]), 
                                      int(particle_properties[pp][1]), 
                                      1]
-                    
-            self.track_particles(self.db_file, recent_df)
+
+            #appending the recent particles to the dataframe of all particles
+            all_particles_df = pd.concat([all_particles_df, recent_df], ignore_index=True)
             
             current_frame += 1 
             frame_count += 1
@@ -158,9 +172,12 @@ class NoFilter:
                 toc = time.perf_counter()
                 fps = frame_count / (toc - tic)
                 logger.info(
-                    f"{img_time}, fps: {fps:.2f}, total frames: {current_frame}/{frame_count_total}, time left: {((frame_count_total - current_frame) / fps) / 60:.2f} min"
+                    f"{self.run_name}, {img_time}, fps: {fps:.2f}, total frames: {current_frame}/{frame_count_total}, time left: {((frame_count_total - current_frame) / fps) / 60:.2f} min"
                 )
                 tic = time.perf_counter()
                 frame_count = 0
 
             time_before = img_time
+        
+        #writing the information from all the particles to the sqlite database
+        self.track_particles(self.db_file, recent_df)
