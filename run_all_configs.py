@@ -28,7 +28,7 @@ for cf in config_files:
         handlers=[
             logging.StreamHandler(),
             logging.FileHandler(
-                Path(__file__).parent / "logs" / f"{datetime.now()}.log"),],)   
+                Path(__file__).parent / "logs" / f"{datetime.now().strftime("%Y-%m-%d_%H:%M:%S")}.log"),],)   
 
     # run image processing
     Looper = ImageLooper(c)
