@@ -3,12 +3,11 @@
 # to count the number of particles in each image for sediment transport studies.
 # 2024-03-10: Tobias Mueller, initial version
 # 2024-09-17: Sol Leader-cole, adjusted version
-
-#TODO Add warning to preent people from overwriting the sqlite database if images have already been processed
+# 2024-11-04: Kellen Malek, modified to run w/ multiprocessing
+# 2024-12-27: Sol Leader-Cole, incorporated no_filter analysis into this file to improve efficiency
 
 import logging
 from pathlib import Path
-from datetime import datetime
 import time
 
 # database for storing results
@@ -22,14 +21,15 @@ import skimage
 #storing results
 import pandas as pd
 
-# plotting
-from matplotlib import pyplot as plt
-
 #warning
 import tkinter as tk
 import sys
 
-logger = logging.getLogger(__name__)
+#multiprocessing & multithreading
+import multiprocessing as mp
+import threading
+
+#logger = logging.getLogger(__name__)
 
 
 class ImageLooper:
@@ -37,7 +37,7 @@ class ImageLooper:
         self.images = list(Path(config["images"]["path"]).rglob("*.tif"))
 
         self.file_background = Path(config["images"]["file_background"])
-        self.debug = config["debugging"]["debug"] == True
+        self.debug = config["debugging"]["debug"]
         self.config = config
 
         self.db_file = Path(
@@ -47,6 +47,9 @@ class ImageLooper:
 
         #saving run name
         self.run_name = config["config"]["run_name"]
+
+        #crop the images
+        self.crop = True
 
         # create database
         self.create_db(self.db_file)
@@ -137,7 +140,8 @@ class ImageLooper:
         # clear database
         db.execute("DROP TABLE IF EXISTS particles")
         db.execute("DROP TABLE IF EXISTS images")
-
+        db.execute("DROP TABLE IF EXISTS no_filter")
+        
         # create table to append particle recognitions
         db.execute(
             "CREATE TABLE particles (id INTEGER PRIMARY KEY, image TEXT, time REAL, x REAL, y REAL, width REAL, height REAL, area REAL)"
@@ -146,6 +150,11 @@ class ImageLooper:
         db.execute(
             "CREATE TABLE images (id INTEGER PRIMARY KEY, image TEXT, time REAL, particles INTEGER, bedload INTEGER)"
         )
+        #create table to append no_filter particle properties
+        db.execute(
+            "CREATE TABLE no_filter (id INTEGER PRIMARY KEY, x_init REAL, y_init REAL, area REAL, x_final REAL, y_final REAL, first_frame REAL, last_frame REAL)"
+        )
+
         # close database
         db.commit()
         db.close()
@@ -194,41 +203,37 @@ class ImageLooper:
 
         return img
 
-    def write_to_sqlite(self, db_file, image_path, particles, pixel_length):
-
-        # open database
-        db = sqlite3.connect(db_file)
+    def write_to_sqlite(self, db, img_data, no_filter_data):
 
         # add image data to sqlite database
         db.execute(
             "INSERT INTO images (image, time, particles) VALUES (?, ?, ?)",
-            (image_path.as_posix(), float(image_path.stem), None),
+            (img_data[0][0], img_data[0][1], None),
         )
 
-        for particle in particles:
-            # add to sqlite database
-            db.execute(
-                "INSERT INTO particles (image, time, x, y, width, height, area) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    image_path.as_posix(),
-                    float(image_path.stem),
-                    particle.centroid[1],
-                    particle.centroid[0],
-                    (particle.bbox[3] - particle.bbox[1]) * pixel_length,
-                    (particle.bbox[2] - particle.bbox[0]) * pixel_length,
-                    particle.area * (pixel_length**2),
-                ),
-            )
+        #add particle data to sqlite database
+        db.executemany(
+            '''
+            INSERT INTO particles (image, time, x, y, width, height, area) VALUES
+            (?, ?, ?, ?, ?, ?, ?)
+            ''',
+            img_data,
+        )
 
-        # close database
-        db.commit()
-        db.close()
+        #add no_filter data to sqlite database
+        db.executemany(
+            '''
+            INSERT INTO no_filter (x_init, y_init, area, x_final, y_final, first_frame, last_frame) VALUES
+            (?, ?, ?, ?, ?, ?, ?)
+            ''',
+            no_filter_data,
+        )
 
-    def analyze_image(self, db_file, image_path, img_bg, pixel_length):
+    def analyze_image(self, image_path, img_bg, pixel_length):
         particles = []
 
         # load image
-        img = self.load_image_gray(image_path, crop=False)
+        img = self.load_image_gray(image_path, crop=self.crop)
 
         # subtract background
         img = cv2.subtract(img_bg, img)
@@ -246,27 +251,19 @@ class ImageLooper:
         particles = skimage.measure.label(img, background=0)
         particles = skimage.measure.regionprops(particles)
 
-        # write to sqlite database
-        self.write_to_sqlite(db_file, image_path, particles, pixel_length)
+        #storing the particle information in a list
+        particle_data = []
+        for particle in particles:
+            data = (image_path.as_posix(),
+                    image_path.stem, 
+                    particle.centroid[1], 
+                    particle.centroid[0],
+                    (particle.bbox[3] - particle.bbox[1]) * pixel_length,
+                    (particle.bbox[2] - particle.bbox[0]) * pixel_length,
+                    particle.area * (pixel_length**2))
+            particle_data.append(data)
 
-        df_particles = pd.DataFrame(
-            [
-                {
-                    "time": float(image_path.stem),
-                    "x": particle.centroid[1],
-                    "y": particle.centroid[0],
-                    "width": (particle.bbox[3] - particle.bbox[1]) * pixel_length,
-                    "height": (particle.bbox[2] - particle.bbox[0]) * pixel_length,
-                    "bbox": particle.bbox,
-                    "area": particle.area * (pixel_length**2),
-                }
-                for particle in particles
-            ]
-        )
-        if not (df_particles.empty):
-            df_particles.sort_values("area", ascending=False, inplace=True)
-
-        return img, df_particles
+        return img, particle_data
 
     # TODO finish this work
     def calc_pixel_size(self, img_cal):
@@ -285,7 +282,71 @@ class ImageLooper:
 
         return None
 
-    def run(self):
+    def chunk(self, images, numImagesPerProc):
+        '''
+        Break image paths into seperate chunks that can be served to each processor
+        '''
+        for i in range(0, len(images), numImagesPerProc):
+            yield images[i : i + numImagesPerProc]
+
+    def listener_thread(self, q):
+        '''
+        Create a thread that listens to the queue and when a record appears
+        an INSERT command is created from the image data passed in the record
+        and info is logged on the progress and speed of processing
+        '''
+        db = sqlite3.connect(self.db_file)
+        # data is commited to the database once all images have been analyzed
+        # disabling journal mode for performance gain
+        db.executescript(
+            '''
+            PRAGMA synchronous = OFF;
+            PRAGMA journal_mode = OFF;
+            '''
+        )
+        frame_count = 0 
+        frame_count_total = 0
+        tic = time.perf_counter()
+        while True:
+            img_data = q.get()
+            if img_data is None:
+                break
+            no_filter_data = []
+            for item in img_data:
+                no_filter_data.append((item[2], item[3], item[6], item [2], item[3], item[1], item[1]))
+            frame_count += 1
+            frame_count_total += 1
+            self.write_to_sqlite(db, img_data, no_filter_data)
+            toc = time.perf_counter()
+            fps = frame_count / (toc - tic)
+            #log every 120th frame that is processed
+            logger = logging.getLogger(__name__)
+            if frame_count_total % 60 == 0:
+                logger.info(
+                    f"{self.run_name}, "
+                    f"fps: {fps:.2f}, "
+                    f"total frames: {frame_count_total}/{len(self.images)}, "
+                    f"time left: {((len(self.images) - frame_count_total) / fps) / 60:.2f} min"
+                )
+                tic = time.perf_counter()
+                frame_count = 0
+
+        db.commit()
+        db.close()
+
+
+    def worker_process(self, queue, payload, img_bg, pixel_length):
+        '''
+        Pass a chunk of image paths to each processor to be analyzed
+        '''
+        for image_path in payload['image_paths']:
+            particle_data = self.analyze_image(image_path, img_bg, pixel_length)[1]
+            queue.put(particle_data)
+
+        print(f"processor {payload['id']} done!")
+
+
+    def run(self, payloads):
         # TODO: write code to obtain pixel to mm size
         pixel_length = self.calc_pixel_size(self.img_cal)
 
@@ -293,42 +354,23 @@ class ImageLooper:
         pixel_length = 15 / 45
 
         frame_count = 0
-        frame_count_total = 0
-        tic = time.perf_counter()
 
         images = sorted(self.images)
 
         # load background image
-        img_bg = self.load_image_gray(self.file_background, crop=False)
+        img_bg = self.load_image_gray(self.file_background, crop=self.crop)
 
-        #particle_linker = ParticleLinker(self.config)
-
-        img_time_start = float(images[0].stem)
-        img_time_before = img_time_start
+        # img_time_start = float(images[0].stem)
+        # img_time_before = img_time_start
         img_prev = None
-        df_part_prev = None
+        # df_part_prev = None
 
         # loop through images
         for image_path in images:
-            img_time = float(image_path.stem)
-            img, df_part_now = self.analyze_image(
-                self.db_file, image_path, img_bg, pixel_length
-            )
+            # img_time = float(image_path.stem)
+            img = self.analyze_image(image_path, img_bg, pixel_length)[0]
 
             frame_count += 1
-            frame_count_total += 1
-
-            # for every second of the experiment, print the fps and time remaining
-            if np.floor(img_time) != np.floor(img_time_before):
-                toc = time.perf_counter()
-                fps = frame_count / (toc - tic)
-                logger.info(
-                    f"{self.run_name}, {img_time}, fps: {fps:.2f}, total frames: {frame_count_total}/{len(self.images)}, time left: {((len(self.images) - frame_count_total) / fps) / 60:.2f} min"
-                )
-                tic = time.perf_counter()
-                frame_count = 0
-
-            img_time_before = img_time
 
             # displays overlay of particle if "debug" is True, else not needed
             if self.debug:
@@ -357,11 +399,45 @@ class ImageLooper:
 
                     # input("Press Enter to see next image")
 
-                if (frame_count) > int(
-                    self.config["debugging"]["images_to_view"]
-                ):
+                if (frame_count) > int(self.config["debugging"]["images_to_view"]):
                     cv2.destroyAllWindows()
                     cv2.waitKey(1)
                     self.debug = False
+                    break
 
                 img_prev = img
+            
+            #breaks the loop if there is no debugging to improve efficiency
+            else:
+                break
+
+        #creating multiprocessing queue for communication between processes and listener
+        queue = mp.Queue()
+
+        #creating listener thread to listen for messages form the queue 
+        lp = threading.Thread(target=self.listener_thread, args = (queue,))
+        lp.start()
+
+        #empty list to store worker processes
+        workers = []
+        
+        #loop through the payloads and creater a worker process for each payload
+        for payload in payloads:
+            try:
+                worker = mp.Process(
+                    target=self.worker_process,
+                    args=(queue, payload, img_bg, pixel_length))
+                workers.append(worker)
+                worker.start()
+            except Exception as e:
+                print(f"failed to start worker for payload {payload}: {e}")
+
+        #wait for the worker processes to finish
+        for w in workers:
+            w.join()
+
+        #stop the listener thread
+        queue.put_nowait(None)
+
+        #wait for the listener thread to finish
+        lp.join()

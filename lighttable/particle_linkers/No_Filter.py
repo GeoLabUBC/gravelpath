@@ -180,4 +180,4 @@ class NoFilter:
             time_before = img_time
         
         #writing the information from all the particles to the sqlite database
-        self.track_particles(self.db_file, recent_df)
+        self.track_particles(self.db_file, all_particles_df)
