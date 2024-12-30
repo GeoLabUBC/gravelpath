@@ -311,12 +311,13 @@ class ImageLooper:
             img_data = q.get()
             if img_data is None:
                 break
-            no_filter_data = []
-            for item in img_data:
-                no_filter_data.append((item[2], item[3], item[6], item [2], item[3], item[1], item[1]))
+            if len(img_data) > 0:
+                no_filter_data = []
+                for item in img_data:
+                    no_filter_data.append((item[2], item[3], item[6], item [2], item[3], item[1], item[1]))
+                self.write_to_sqlite(db, img_data, no_filter_data)
             frame_count += 1
             frame_count_total += 1
-            self.write_to_sqlite(db, img_data, no_filter_data)
             toc = time.perf_counter()
             fps = frame_count / (toc - tic)
             #log every 120th frame that is processed
