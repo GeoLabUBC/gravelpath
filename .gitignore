@@ -3,6 +3,8 @@ output/
 test_images/
 t00-t20/
 input/
+configs_to_run/
+finished_configs/
 
 # ignore pycache
 __pycache__/

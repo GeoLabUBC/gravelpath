@@ -31,6 +31,7 @@ if __name__ == '__main__':
 
     # iterate over each config file
     for cf in config_files:
+
         # load the config file
         c = toml.load(cf)
 
@@ -47,7 +48,7 @@ if __name__ == '__main__':
             handlers=[
                 logging.StreamHandler(),
                 logging.FileHandler(
-                    Path(__file__).parent / "logs" / f"{datetime.now().strftime("%Y-%m-%d_%H:%M:%S")}.log"),],)   
+                    Path(__file__).parent / "logs" / f"{datetime.now().strftime("%Y_%m_%d_%H-%M-%S")}.log"),],)   
 
 
         #chunk the images into seperate payloads which can be passed to each processor
