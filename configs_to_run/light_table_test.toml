@@ -49,10 +49,10 @@ classes = [
     '45.0',
     '64.0',
 ]
-density = 0.0016
+density = 0.00265
 percentiles = [16, 50, 84, 90]
 
 [debugging]
 debug = false # true or false
-images_to_view = 20
+images_to_view = 50
 stop_time_sec = "2"

@@ -61,14 +61,14 @@ class Particle_Extractor:
 
         cur = db.cursor()
         # Database Configuration
-        # Table: particles -> id, image, time, x, y, width, height, area
+        # Table: particles -> id, image, time, x, y, width, length, area
         # Table: images -> id, image, time, particles
         # Table: seconds -> id, time, particles
-        # Table: XX_Filter, id, x_init, y_init, area, x_final, y_final, first_frame, last_frame
+        # Table: XX_Filter, id, x_init, y_init, area, a_axis, b_axis, x_final, y_final, first_frame, last_frame
 
         
         #extract all trajectory information from the specific algorithm's table
-        cur.execute(f"SELECT x_init, y_init, area, x_final, y_final, first_frame, last_frame FROM {algorithm}")
+        cur.execute(f"SELECT x_init, y_init, area, a_axis, b_axis, x_final, y_final, first_frame, last_frame FROM {algorithm}")
 
         #save the information to variable trajectories
         trajectories = cur.fetchall()
@@ -81,12 +81,12 @@ class Particle_Extractor:
 
         for particle in trajectories: 
             #insert information into a list of dictionaries
-            data_list.append(dict((label,particle[index]) for index,label in enumerate(['x_init', 'y_init', 'area', 'x_final', 'y_final',
-                                                                                        'first_frame', 'last_frame'])))
+            data_list.append(dict((label,particle[index]) for index,label in enumerate(['x_init', 'y_init', 'area', 'a_axis', 'b_axis', 
+                                                                                        'x_final', 'y_final', 'first_frame', 'last_frame'])))
             
         
         #convert the list of dictionaries into a df as it will be easier to manipulate
-        linked_particles = pd.DataFrame(data_list, columns=['x_init', 'y_init', 'area', 'x_final', 'y_final', 'first_frame', 'last_frame'])
+        linked_particles = pd.DataFrame(data_list, columns=['x_init', 'y_init', 'area', 'a_axis', 'b_axis', 'x_final', 'y_final', 'first_frame', 'last_frame'])
 
         #sort the information so that it is arranged according to the frame it first appears in
         if not(linked_particles.empty):
@@ -100,10 +100,12 @@ class Particle_Extractor:
         logger.info(f"{self.run_name} - Calculating grain size for algorithm: {algorithm}")
 
         #calculating the equivalent grain size assuming the particle was circular
-        linked_particles['grain_size'] = 2*(np.sqrt(linked_particles['area']/np.pi))
+        # linked_particles['grain_size'] = 2*(np.sqrt(linked_particles['area']/np.pi))
+        linked_particles['grain_size'] = linked_particles['b_axis'] #using b-axis to try and reduce error associated with large particles
 
         #calculating the equivalent volume of the particle assuming particle is a sphere
-        linked_particles['volume'] = ((1/6)*np.pi*(linked_particles['grain_size']**3))
+        # linked_particles['volume'] = ((1/6)*np.pi*(linked_particles['grain_size']**3))
+        linked_particles['volume'] = ((4/3)*np.pi*(linked_particles['a_axis']*0.5)*((linked_particles['b_axis']*0.5)**2)) #using b-axis and a-axis to calculate volume assuming particle is ellipsoid
 
         #calculating the particles mass assuming constant density
         linked_particles['mass'] = linked_particles['volume'] * self.sediment_density
@@ -221,8 +223,11 @@ class Particle_Extractor:
 
         return second_transport, minute_transport, transport_bins[:-1] - first_frame + 1, np.append(min_index, last_frame - first_frame) + 1
     
-    def export_data(self, gsd, Di, instant_rate, moving_avg, seconds, minutes, algorithm):
+    def export_data(self, gsd, Di, linked_particles, instant_rate, moving_avg, seconds, minutes, algorithm):
         
+        #export the particle data
+        linked_particles.to_csv(f"{self.c['output']['path']}/{algorithm}_particles.csv")
+
         #export gsd csv
         gsd.to_csv(f"{self.c['output']['path']}/{algorithm}_gsd.csv")
 
@@ -282,6 +287,6 @@ class Particle_Extractor:
             instant_rate, moving_avg, seconds, minutes = self.transport_rate(linked_particles, algorithm)
 
             #export the data
-            self.export_data(gsd, Di, instant_rate, moving_avg, seconds, minutes, algorithm)
+            self.export_data(gsd, Di, linked_particles, instant_rate, moving_avg, seconds, minutes, algorithm)
 
             print(f"Finished processing {self.run_name}, {algorithm} data")

@@ -1,0 +1,7 @@
+[config]
+run_name = "example"
+run_discharge = "0"
+
+[paths]
+results_path = "D:/Sol/12m_HellySmith/LightTable/Output/Experiment_name/Experiment_condition/LightTableDischarge"
+sieve_path = "Z:/sol/12m_HellySmith/Transport_Data/Raw_Datasheets/Experiment_Trap_Data.xlsx"

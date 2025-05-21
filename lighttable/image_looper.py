@@ -144,15 +144,15 @@ class ImageLooper:
         
         # create table to append particle recognitions
         db.execute(
-            "CREATE TABLE particles (id INTEGER PRIMARY KEY, image TEXT, time REAL, x REAL, y REAL, width REAL, height REAL, area REAL)"
+            "CREATE TABLE particles (id INTEGER PRIMARY KEY, image TEXT, time REAL, x REAL, y REAL, width REAL, length REAL, area REAL)"
         )
         # create table to append per image data
         db.execute(
-            "CREATE TABLE images (id INTEGER PRIMARY KEY, image TEXT, time REAL, particles INTEGER, bedload INTEGER)"
+            "CREATE TABLE images (id INTEGER PRIMARY KEY, image TEXT, time REAL, particles INTEGER)"
         )
         #create table to append no_filter particle properties
         db.execute(
-            "CREATE TABLE no_filter (id INTEGER PRIMARY KEY, x_init REAL, y_init REAL, area REAL, x_final REAL, y_final REAL, first_frame REAL, last_frame REAL)"
+            "CREATE TABLE no_filter (id INTEGER PRIMARY KEY, x_init REAL, y_init REAL, area REAL, a_axis REAL, b_axis REAL, x_final REAL, y_final REAL, first_frame REAL, last_frame REAL)"
         )
 
         # close database
@@ -208,13 +208,13 @@ class ImageLooper:
         # add image data to sqlite database
         db.execute(
             "INSERT INTO images (image, time, particles) VALUES (?, ?, ?)",
-            (img_data[0][0], img_data[0][1], None),
+            (img_data[0][0], img_data[0][1], len(img_data)),
         )
 
         #add particle data to sqlite database
         db.executemany(
             '''
-            INSERT INTO particles (image, time, x, y, width, height, area) VALUES
+            INSERT INTO particles (image, time, x, y, width, length, area) VALUES
             (?, ?, ?, ?, ?, ?, ?)
             ''',
             img_data,
@@ -223,8 +223,8 @@ class ImageLooper:
         #add no_filter data to sqlite database
         db.executemany(
             '''
-            INSERT INTO no_filter (x_init, y_init, area, x_final, y_final, first_frame, last_frame) VALUES
-            (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO no_filter (x_init, y_init, area, a_axis, b_axis, x_final, y_final, first_frame, last_frame) VALUES
+            (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             no_filter_data,
         )
@@ -258,11 +258,11 @@ class ImageLooper:
                     image_path.stem, 
                     particle.centroid[1], 
                     particle.centroid[0],
-                    (particle.bbox[3] - particle.bbox[1]) * pixel_length,
-                    (particle.bbox[2] - particle.bbox[0]) * pixel_length,
+                    particle.axis_minor_length * pixel_length,
+                    particle.axis_major_length * pixel_length,
                     particle.area * (pixel_length**2))
             particle_data.append(data)
-
+        
         return img, particle_data
 
     # TODO finish this work
@@ -314,7 +314,7 @@ class ImageLooper:
             if len(img_data) > 0:
                 no_filter_data = []
                 for item in img_data:
-                    no_filter_data.append((item[2], item[3], item[6], item [2], item[3], item[1], item[1]))
+                    no_filter_data.append((item[2], item[3], item[6], item[5], item[4], item [2], item[3], item[1], item[1]))
                 self.write_to_sqlite(db, img_data, no_filter_data)
             frame_count += 1
             frame_count_total += 1
@@ -351,8 +351,7 @@ class ImageLooper:
         # TODO: write code to obtain pixel to mm size
         pixel_length = self.calc_pixel_size(self.img_cal)
 
-        # TODO speak to tobias about likelihood of this changing if elevation of lighttable camera and table won't change
-        pixel_length = 15 / 45
+        pixel_length = 20 / 55
 
         frame_count = 0
 
