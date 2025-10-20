@@ -121,7 +121,7 @@ class Particle_Extractor:
         logger.info(f"{self.run_name} - Calculating the grain size distribution for algorithm: {algorithm}")
 
         #create list of values to bin data by
-        gsd_bins = [0, 0.5, 0.71, 1, 1.4, 2, 2.83, 4, 5.6, 8, 11.3, 16, 22.6, 32.3, 45, 100]
+        gsd_bins = [0.5, 0.71, 1, 1.4, 2, 2.83, 4, 5.6, 8, 11.3, 16, 22.6, 32.3, 45, 64, 100]
         
         #bin particles based on their values
         linked_particles['binned'] = pd.cut(linked_particles['grain_size'], bins = gsd_bins, labels = self.phi_fraction, include_lowest=True)

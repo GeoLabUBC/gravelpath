@@ -378,7 +378,7 @@ class ImageLooper:
                 if img_prev is not None:
                     
                     #using the original image and the thresholded particles
-                    original_image = self.load_image_gray(image_path)
+                    original_image = self.load_image_gray(image_path, crop=True)
                     thresholded_image = img.copy()
 
                     #convert the original image to color
@@ -390,9 +390,13 @@ class ImageLooper:
                     thresholded_image = cv2.morphologyEx(thresholded_image, cv2.MORPH_CLOSE, kernel)
                     thresholded_image[:, :, 0:2] = 0
 
+                    #create overlay image to see how the particle sizes are detected
+                    overlay_image = cv2.addWeighted(thresholded_image, 0.5, original_image, 1-0.5, 0)
+
                     # display the image
-                    cv2.imshow("thresholded_image", thresholded_image)
-                    cv2.imshow("original_image", original_image)
+                    # cv2.imshow("thresholded_image", thresholded_image)
+                    # cv2.imshow("original_image", original_image)
+                    cv2.imshow("particle_overlay", overlay_image)
 
                     key = cv2.waitKey(1000)
                     cv2.waitKey(0)
